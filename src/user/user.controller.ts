@@ -1,45 +1,74 @@
-// src/user/user.controller.ts
-import { Controller, Get, Post, Param, Body, Put, Delete, Sse } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Sse,
+  MessageEvent,
+  Post,
+  Body,
+  Param,
+  Put,
+  Delete,
+  ParseUUIDPipe,
+} from '@nestjs/common';
+import { Observable } from 'rxjs';
 import { UserService } from './user.service';
-import { Prisma } from '@prisma/client';
-import { interval, map } from 'rxjs';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
+  // Создание
   @Post()
-  async createUser(@Body() data: Prisma.UserCreateInput) {
+  async createUser(@Body() data: CreateUserDto) {
     return this.userService.createUser(data);
   }
 
+  // Получение всех
   @Get()
   async getAllUsers() {
     return this.userService.getAllUsers();
   }
 
+  // SSE
+  @Sse('stream')
+  streamUsers(): Observable<MessageEvent> {
+    return new Observable<MessageEvent>((observer) => {
+      const sendUsers = async () => {
+        try {
+          const users = await this.userService.getAllUsers();
+          observer.next({ data: users });
+        } catch (error) {
+          observer.error(error);
+        }
+      };
+      sendUsers();
+      const intervalId = setInterval(sendUsers, 5000);
+      return () => {
+        clearInterval(intervalId);
+      };
+    });
+  }
+
+  // Получение по ID
   @Get(':id')
-  async getUserById(@Param('id') id: string) {
+  async getUserById(@Param('id', new ParseUUIDPipe({ errorHttpStatusCode: 400 })) id: string) {
     return this.userService.getUserById(id);
   }
 
+  // Обновление
   @Put(':id')
-  async updateUser(@Param('id') id: string, @Body() data: Prisma.UserUpdateInput) {
+  async updateUser(
+    @Param('id', new ParseUUIDPipe({ errorHttpStatusCode: 400 })) id: string,
+    @Body() data: UpdateUserDto,
+  ) {
     return this.userService.updateUser(id, data);
   }
 
+  // Удаление
   @Delete(':id')
-  async deleteUser(@Param('id') id: string) {
+  async deleteUser(@Param('id', new ParseUUIDPipe({ errorHttpStatusCode: 400 })) id: string) {
     return this.userService.deleteUser(id);
-  }
-
-  // SSE для получения пользователей в режиме реального времени
-  @Sse('stream')
-  streamUsers() {
-    return interval(1000).pipe(
-      map(async () => ({
-        data: await this.userService.getAllUsers(),
-      })),
-    );
   }
 }
